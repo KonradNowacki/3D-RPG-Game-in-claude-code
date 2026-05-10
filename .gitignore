@@ -7,8 +7,9 @@ dist/
 # IDE
 .idea/
 
-# Claude Code local config
-.claude/
+# Claude Code local config (keep .claude/agents but ignore local settings)
+.claude/settings.local.json
+.claude/agent-memory/
 
 # Environment files
 .env
