@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A browser-based 3D game built with **Three.js** and **TypeScript**, bundled with **Vite**.
 
+## Agents
+
+**Prefer using specialized agents rather than implementing directly.** Available agents:
+
+- **game-feature-builder** — Use for implementing new game features, levels, mechanics, UI systems, and content additions. This agent handles architecture decisions, design validation, integration testing, and full implementation lifecycle.
+
+When you have a feature request, use the agent to design and implement it rather than coding directly. Agents provide better validation, testing, and architectural oversight.
+
 ## Engine: Three.js
 
 Three.js was chosen for its:

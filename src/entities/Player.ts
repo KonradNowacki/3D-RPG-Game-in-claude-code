@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import type { Input } from '../core/Input';
+import type { Platform } from '../core/types';
 
 const SPEED = 5;
+const SPRINT_MULTIPLIER = 1.5;
 const TURN_SPEED = 2.2;
 const JUMP_VEL = 7;
 const GRAVITY = -22;
-const GROUND_Y = 0;
-const BOUND = 9.4;
+const BOUND = 45;
 
 export class Player {
   readonly group = new THREE.Group();
@@ -81,7 +82,7 @@ export class Player {
     return this.group.rotation.y;
   }
 
-  update(dt: number, input: Input) {
+  update(dt: number, input: Input, platforms: Platform[] = []) {
     // ── Turning ───────────────────────────────────────────────
     if (input.isDown('a')) this.group.rotation.y += TURN_SPEED * dt;
     if (input.isDown('d')) this.group.rotation.y -= TURN_SPEED * dt;
@@ -90,13 +91,15 @@ export class Player {
     const forward = new THREE.Vector3(0, 0, -1).applyEuler(this.group.rotation);
     let moving = false;
 
+    const speed = input.isDown('shift') ? SPEED * SPRINT_MULTIPLIER : SPEED;
+
     if (input.isDown('w')) {
-      this.vel.x = forward.x * SPEED;
-      this.vel.z = forward.z * SPEED;
+      this.vel.x = forward.x * speed;
+      this.vel.z = forward.z * speed;
       moving = true;
     } else if (input.isDown('s')) {
-      this.vel.x = -forward.x * SPEED;
-      this.vel.z = -forward.z * SPEED;
+      this.vel.x = -forward.x * speed;
+      this.vel.z = -forward.z * speed;
       moving = true;
     } else {
       this.vel.x = 0;
@@ -117,12 +120,23 @@ export class Player {
     // ── Integrate ─────────────────────────────────────────────
     this.group.position.addScaledVector(this.vel, dt);
 
-    // ── Ground collision ──────────────────────────────────────
-    if (this.group.position.y <= GROUND_Y) {
-      this.group.position.y = GROUND_Y;
+    // ── Platform collision ────────────────────────────────────
+    let floorY = -Infinity;
+    const px = this.group.position.x;
+    const pz = this.group.position.z;
+    for (const p of platforms) {
+      if (px >= p.minX && px <= p.maxX && pz >= p.minZ && pz <= p.maxZ) {
+        if (p.topY > floorY) floorY = p.topY;
+      }
+    }
+    if (this.vel.y <= 0 && this.group.position.y <= floorY) {
+      this.group.position.y = floorY;
       this.vel.y = 0;
       this.onGround = true;
+    } else {
+      this.onGround = false;
     }
+
 
     // ── World boundary ────────────────────────────────────────
     this.group.position.x = THREE.MathUtils.clamp(this.group.position.x, -BOUND, BOUND);

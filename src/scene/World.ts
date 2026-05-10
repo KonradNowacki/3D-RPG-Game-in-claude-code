@@ -35,15 +35,15 @@ export class World {
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near   =  1;
     sun.shadow.camera.far    = 200;
-    sun.shadow.camera.left   = -14;
-    sun.shadow.camera.right  =  14;
-    sun.shadow.camera.top    =  14;
-    sun.shadow.camera.bottom = -14;
+    sun.shadow.camera.left   = -60;
+    sun.shadow.camera.right  =  60;
+    sun.shadow.camera.top    =  60;
+    sun.shadow.camera.bottom = -60;
     this.scene.add(sun);
 
-    // Ground — 20×20 m
+    // Ground — 100×100 m
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(20, 20),
+      new THREE.PlaneGeometry(100, 100),
       new THREE.MeshStandardMaterial({ map: this.makeGrassTex(), roughness: 0.95 }),
     );
     ground.rotation.x = -Math.PI / 2;
@@ -74,7 +74,7 @@ export class World {
     this.addClouds();
 
     // Subtle distance fog
-    this.scene.fog = new THREE.Fog(0xd4eaf7, 25, 90);
+    this.scene.fog = new THREE.Fog(0xd4eaf7, 50, 200);
   }
 
   private makeGrassTex(): THREE.CanvasTexture {
@@ -100,7 +100,7 @@ export class World {
 
     const tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(10, 10);
+    tex.repeat.set(50, 50);
     return tex;
   }
 
