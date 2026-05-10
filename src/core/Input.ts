@@ -4,7 +4,7 @@ export class Input {
   constructor() {
     window.addEventListener('keydown', e => {
       this.held.add(e.key.toLowerCase());
-      if ([' ', 'arrowup', 'arrowdown'].includes(e.key.toLowerCase())) {
+      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
         e.preventDefault();
       }
     });

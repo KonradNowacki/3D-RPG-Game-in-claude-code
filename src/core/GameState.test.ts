@@ -2,44 +2,39 @@ import { describe, it, expect } from 'vitest';
 import { GameState } from './GameState';
 
 describe('GameState', () => {
-  it('starts with 0 coins collected', () => {
-    const state = new GameState();
-    expect(state.coinsCollected).toBe(0);
+  it('starts on lap 1 with no laps completed and zero elapsed time', () => {
+    const gs = new GameState(3);
+    expect(gs.totalLaps).toBe(3);
+    expect(gs.lapsCompleted).toBe(0);
+    expect(gs.currentLap).toBe(1);
+    expect(gs.elapsed).toBe(0);
+    expect(gs.finished).toBe(false);
   });
 
-  it('increments coin count on collect', () => {
-    const state = new GameState();
-    state.collect();
-    expect(state.coinsCollected).toBe(1);
+  it('increments elapsed via tick()', () => {
+    const gs = new GameState(3);
+    gs.tick(0.5);
+    gs.tick(0.25);
+    expect(gs.elapsed).toBeCloseTo(0.75, 6);
   });
 
-  it('canFinish is false until 10 coins are collected', () => {
-    const state = new GameState();
-    for (let i = 0; i < 9; i++) {
-      state.collect();
-    }
-    expect(state.canFinish).toBe(false);
-    state.collect();
-    expect(state.canFinish).toBe(true);
+  it('stops the clock once finished', () => {
+    const gs = new GameState(3);
+    gs.tick(1);
+    gs.syncLaps(3, true);
+    const frozen = gs.elapsed;
+    gs.tick(2); // ignored
+    expect(gs.elapsed).toBe(frozen);
+    expect(gs.finished).toBe(true);
   });
 
-  it('does not exceed 10 coins when collecting', () => {
-    const state = new GameState();
-    for (let i = 0; i < 15; i++) {
-      state.collect();
-    }
-    expect(state.coinsCollected).toBe(10);
-  });
-
-  it('finish() only works when canFinish is true', () => {
-    const state = new GameState();
-    state.finish();
-    expect(state.finished).toBe(false);
-
-    for (let i = 0; i < 10; i++) {
-      state.collect();
-    }
-    state.finish();
-    expect(state.finished).toBe(true);
+  it('currentLap reflects laps completed and caps at totalLaps', () => {
+    const gs = new GameState(3);
+    gs.syncLaps(1, false);
+    expect(gs.currentLap).toBe(2);
+    gs.syncLaps(2, false);
+    expect(gs.currentLap).toBe(3);
+    gs.syncLaps(3, true);
+    expect(gs.currentLap).toBe(3);
   });
 });

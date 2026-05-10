@@ -6,16 +6,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A browser-based 3D game built with **Three.js** and **TypeScript**, bundled with **Vite**.
 
+## Current Project: Racing Game
+
+The game has been rebuilt as an arcade-style racing simulator with the following features:
+
+- **World:** 300×300m grass field with a technical racing circuit
+- **HUD:** Real-time display of lap count, elapsed time, speed (km/h)
+- **Win Condition:** Complete 3 laps to trigger "Race Complete!" overlay
+
+### Skills Documentation
+
+**Always consult skill files when modifying track or car:**
+
+- **`.claude/skills/car/SKILL.md`** — Mercedes-AMG GTR specifications
+  - 250 km/h (69.4 m/s) top speed, 30 km/h reverse
+  - 500 HP acceleration curve, realistic physics model
+  - Web Audio procedural engine/tire sound design
+  
+- **`.claude/skills/track/SKILL.md`** — Spa-Francorchamps circuit specifications
+  - 7.2 km lap with 8 major corners (Eau Rouge, Raidillon, Kemmel, Pouhon, Les Combes, Blanchimont, Bus Stop)
+  - Elevation changes, weather effects, checkpoint layout
+  - Asphalt-only road with inner curbs at corners
+
 ## Agents
 
 **Prefer using specialized agents rather than implementing directly.** Available agents:
 
 - **game-feature-builder** — Use for implementing new game features, levels, mechanics, UI systems, and content additions. This agent handles architecture decisions, design validation, integration testing, and full implementation lifecycle.
+- **docs-explorer** — Use for searching and synthesizing documentation across frameworks and libraries (Three.js, TypeScript, Vite, Vitest, physics libraries). Efficiently finds API details, best practices, and implementation guidance.
+- **game-debugger** — Use when debugging unexpected behavior, crashes, or misbehavior in the 3D game. Traces root causes for physics issues, rendering problems, game state inconsistencies, and performance problems using systematic debugging methodology.
+- **code-review-commit** — Use for reviewing newly written code in the current commit for performance issues, code quality, and readability. Focuses exclusively on changes in the current commit, not the entire codebase.
 
 When you have a feature request, use the agent to design and implement it rather than coding directly. Agents provide better validation, testing, and architectural oversight.
 
 ## Engine: Three.js
-
 Three.js was chosen for its:
 - Largest WebGL ecosystem and community
 - Full control over game architecture (not opinionated)

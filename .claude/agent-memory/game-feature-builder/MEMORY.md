@@ -1,0 +1,2 @@
+- [Vitest jsdom-friendly Three.js usage](feedback_threejs_in_tests.md) — Three.js math/geometry/Scene work in vitest's default node env without extra config; only WebGLRenderer/WebGL textures need a real GPU
+- [Logic/view split is the load-bearing convention](feedback_logic_view_split.md) — entity logic (e.g. Car) stays pure, view classes (e.g. CarView) own meshes; both live in src/entities/

@@ -1,55 +1,74 @@
 import { Engine } from './core/Engine';
-import { Input  } from './core/Input';
+import { Input } from './core/Input';
 import { GameState } from './core/GameState';
-import { Player } from './entities/Player';
-import { World  } from './scene/World';
-import { Coin } from './entities/Coin';
-import { Level1 } from './levels/Level1';
+import { LapTracker } from './core/LapTracker';
+import { Car } from './entities/Car';
+import { CarView } from './entities/CarView';
+import { CheckpointMarker } from './entities/CheckpointMarker';
+import { World } from './scene/World';
+import { RaceTrack } from './levels/RaceTrack';
 import { HUD } from './ui/HUD';
+import { SoundManager } from './audio/SoundManager';
 
-const input     = new Input();
-const world     = new World();
-const player    = new Player();
-const level1    = new Level1(world.scene);
-const gameState = new GameState();
-const hud       = new HUD();
-const coins     = level1.coinPositions.map(([x, y, z]) => new Coin(x, y, z));
+const TOTAL_LAPS = 3;
 
-world.scene.add(player.group);
-coins.forEach(c => world.scene.add(c.mesh));
+const input = new Input();
+const world = new World();
+const track = new RaceTrack(world.scene);
 
-player.group.position.set(0, 0, -6);
+const car = new Car();
+car.position.copy(track.startPosition);
+car.yaw = track.startYaw;
 
-const COLLECT_RADIUS = 1.2;
-const fz = level1.finishZone;
+const carView = new CarView(car);
+world.scene.add(carView.group);
+
+const markers = track.checkpoints.map(cp => new CheckpointMarker(cp, world.scene));
+
+const lapTracker = new LapTracker(track.checkpoints, track.startLine, TOTAL_LAPS);
+const gameState = new GameState(TOTAL_LAPS);
+const hud = new HUD();
+const sounds = new SoundManager();
+
+function refreshCheckpointVisuals() {
+  for (const m of markers) {
+    if (m.checkpoint.index < lapTracker.nextCheckpointIndex) m.setStatus('past');
+    else if (m.checkpoint.index === lapTracker.nextCheckpointIndex) m.setStatus('next');
+    else m.setStatus('future');
+  }
+}
+refreshCheckpointVisuals();
 
 const engine = new Engine((dt) => {
+  // Pure logic
+  const onTrack = track.isOnTrack(car.position.x, car.position.z);
+  car.update(dt, input, onTrack);
 
-  player.update(dt, input, level1.platforms);
+  const prevCheckpointIdx = lapTracker.nextCheckpointIndex;
+  const prevLapsCompleted = lapTracker.lapsCompleted;
+  lapTracker.update(car.position.x, car.position.z);
 
-  // Coin collection
-  for (const coin of coins) {
-    if (!coin.collected && player.position.distanceTo(coin.mesh.position) < COLLECT_RADIUS) {
-      coin.collected = true;
-      coin.mesh.visible = false;
-      gameState.collect();
-    }
-    if (!coin.collected) coin.update(dt);
+  if (
+    lapTracker.nextCheckpointIndex !== prevCheckpointIdx ||
+    lapTracker.lapsCompleted !== prevLapsCompleted
+  ) {
+    refreshCheckpointVisuals();
   }
 
-  // Finish zone trigger
-  const p = player.position;
-  if (!gameState.finished &&
-      gameState.canFinish &&
-      p.x >= fz.minX && p.x <= fz.maxX &&
-      p.z >= fz.minZ && p.z <= fz.maxZ &&
-      p.y >= fz.minY) {
-    gameState.finish();
-    hud.showWin();
-  }
+  gameState.tick(dt);
+  gameState.syncLaps(lapTracker.lapsCompleted, lapTracker.finished);
 
-  hud.update(gameState);
-  world.followCamera(player.position, player.yaw);
+  // Rendering layer
+  carView.update(dt);
+  world.followCar(car.position, car.yaw, dt);
+  hud.update(gameState, car.speed);
+
+  // Audio layer
+  const accelInput = input.isDown('w') ? 1 : input.isDown('s') ? -0.5 : 0;
+  const steerInput = (input.isDown('a') ? 1 : 0) + (input.isDown('d') ? -1 : 0);
+  sounds.updateEngineSound(car.speed, car.physics.maxSpeed, Math.max(0, accelInput));
+  sounds.updateTireSqueals(Math.abs(steerInput) * 0.5, car.speed);
+
   world.render();
 });
 
