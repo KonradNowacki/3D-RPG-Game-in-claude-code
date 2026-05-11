@@ -343,8 +343,8 @@ export class RaceTrack {
     return tex;
   }
 
-  isOnTrack(x: number, z: number): boolean {
-    const hw = this.trackHalfWidth + 0.5;
+  isOnTrack(x: number, z: number, hwOverride?: number): boolean {
+    const hw = hwOverride ?? (this.trackHalfWidth + 0.5);
     for (const seg of this.segments) {
       if (seg.kind === 'straight') {
         const sdx = seg.x2 - seg.x1;

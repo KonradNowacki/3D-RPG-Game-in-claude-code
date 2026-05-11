@@ -14,13 +14,17 @@ export class CarView {
   readonly group = new THREE.Group();
   private readonly wheels: THREE.Mesh[] = [];
 
-  constructor(private readonly car: Car) {
+  /**
+   * @param car   Car logic instance to mirror.
+   * @param color Body color of the car (hex). Defaults to AMG red.
+   */
+  constructor(private readonly car: Car, private readonly color: number = 0xd92b2b) {
     this.build();
   }
 
   private build(): void {
     const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0xd92b2b,
+      color: this.color,
       roughness: 0.4,
       metalness: 0.3,
     });

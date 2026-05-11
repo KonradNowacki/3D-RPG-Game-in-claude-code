@@ -1,38 +1,48 @@
 import type { GameState } from '../core/GameState';
 
 /**
- * Heads-up display for the race:
- *   - Top-left: lap counter ("Lap 1 / 3")
- *   - Top-right: elapsed time ("01:23.45")
- *   - Bottom-center: speedometer ("128 km/h")
- *   - Center overlay (on win): "Race Complete!" with final time
+ * Heads-up display for the race. Supports split-screen via the `side` parameter
+ * so each player gets their own HUD panel within their half of the screen.
+ *
+ *  - Lap counter (top corner of viewport)
+ *  - Elapsed time (top of viewport, near the centre divider)
+ *  - Speedometer (bottom of viewport, centred horizontally within the half)
+ *  - Optional centre overlay on win: "Race Complete!" with final time
  */
+export type HudSide = 'left' | 'right';
+
 export class HUD {
   private readonly lapEl: HTMLDivElement;
   private readonly timerEl: HTMLDivElement;
   private readonly speedEl: HTMLDivElement;
-  private winOverlay: HTMLDivElement | null = null;
+  private static winOverlay: HTMLDivElement | null = null;
 
-  constructor() {
+  constructor(private readonly side: HudSide = 'left', accentColor?: string) {
+    const isLeft = side === 'left';
+    const accent = accentColor ?? (isLeft ? '#ff8a8a' : '#8ab0ff');
+
+    // Lap counter — top corner of the player's viewport
     this.lapEl = HUD.makePanel({
       top: '20px',
-      left: '20px',
-      color: '#ffd700',
+      ...(isLeft ? { left: '20px' } : { right: '20px' }),
+      color: accent,
     });
-    this.lapEl.textContent = 'Lap 1 / 3';
+    this.lapEl.textContent = `${isLeft ? 'P1' : 'P2'} · Lap 1 / 3`;
     document.body.appendChild(this.lapEl);
 
+    // Elapsed time — top, near the centre divider on this player's side
     this.timerEl = HUD.makePanel({
       top: '20px',
-      right: '20px',
+      ...(isLeft ? { left: 'calc(50% - 130px)' } : { left: 'calc(50% + 20px)' }),
       color: '#ffffff',
     });
     this.timerEl.textContent = '00:00.00';
     document.body.appendChild(this.timerEl);
 
+    // Speed — bottom, centred within the player's half
     this.speedEl = HUD.makePanel({
       bottom: '24px',
-      left: '50%',
+      left: isLeft ? '25%' : '75%',
       color: '#a8e0ff',
       transform: 'translateX(-50%)',
       fontSize: '22px',
@@ -67,21 +77,14 @@ export class HUD {
     return el;
   }
 
-  /**
-   * Update HUD text from current race state.
-   *
-   * @param state  GameState for lap/timer info.
-   * @param speedMs  Forward speed of the car in m/s (signed; HUD shows |v|).
-   */
+  /** Update HUD text from current race state. */
   update(state: GameState, speedMs: number): void {
-    this.lapEl.textContent = `Lap ${state.currentLap} / ${state.totalLaps}`;
+    const label = this.side === 'left' ? 'P1' : 'P2';
+    this.lapEl.textContent = `${label} · Lap ${state.currentLap} / ${state.totalLaps}`;
     this.timerEl.textContent = HUD.formatTime(state.elapsed);
-
-    // m/s -> km/h
     const kmh = Math.abs(speedMs) * 3.6;
     this.speedEl.textContent = `${Math.round(kmh)} km/h`;
-
-    if (state.finished) this.showWin(state.elapsed);
+    if (state.finished) HUD.showWin(label, state.elapsed);
   }
 
   private static formatTime(seconds: number): string {
@@ -90,14 +93,15 @@ export class HUD {
     return `${String(m).padStart(2, '0')}:${s.toFixed(2).padStart(5, '0')}`;
   }
 
-  showWin(finalTime: number): void {
-    if (this.winOverlay) return;
-    this.winOverlay = document.createElement('div');
-    this.winOverlay.innerHTML = `
-      <div style="font-size: 56px; margin-bottom: 12px;">Race Complete!</div>
-      <div style="font-size: 28px; color: #ffd700;">${HUD.formatTime(finalTime)}</div>
+  /** Shared (single) win overlay — whichever player finishes first triggers it. */
+  static showWin(winnerLabel: string, finalTime: number): void {
+    if (HUD.winOverlay) return;
+    HUD.winOverlay = document.createElement('div');
+    HUD.winOverlay.innerHTML = `
+      <div style="font-size: 48px; margin-bottom: 12px;">${winnerLabel} Wins!</div>
+      <div style="font-size: 26px; color: #ffd700;">${HUD.formatTime(finalTime)}</div>
     `;
-    this.winOverlay.style.cssText = `
+    HUD.winOverlay.style.cssText = `
       position: fixed;
       top: 50%;
       left: 50%;
@@ -112,6 +116,6 @@ export class HUD {
       text-align: center;
       border: 4px solid #ffd700;
     `;
-    document.body.appendChild(this.winOverlay);
+    document.body.appendChild(HUD.winOverlay);
   }
 }

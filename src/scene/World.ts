@@ -2,23 +2,31 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 
 /**
- * Owns the Three.js scene, camera, renderer, lighting, sky, and ground —
- * everything that is purely "world dressing" rather than gameplay.
+ * Owns the Three.js scene, two cameras for split-screen, the renderer, lighting,
+ * sky, and ground. The split is vertical (left half = player 1, right half = player 2).
  *
- * The chase camera (`followCar`) lerps toward an offset behind the car so
- * the view is stable through hard turns instead of snapping.
+ * Each chase camera (`followCar1` / `followCar2`) lerps toward an offset behind
+ * its car for stable cornering. `render()` draws the scene twice into two
+ * viewports using scissor clipping.
  */
 export class World {
   readonly scene = new THREE.Scene();
-  readonly camera: THREE.PerspectiveCamera;
+  readonly camera1: THREE.PerspectiveCamera;  // Player 1 (left half)
+  readonly camera2: THREE.PerspectiveCamera;  // Player 2 (right half)
   readonly renderer: THREE.WebGLRenderer;
 
-  /** Smoothed camera state — kept across frames for damping. */
-  private readonly camPosTarget = new THREE.Vector3();
-  private readonly camLookTarget = new THREE.Vector3();
-  private readonly camPosCurrent = new THREE.Vector3();
-  private readonly camLookCurrent = new THREE.Vector3();
-  private camInitialized = false;
+  // Smoothed chase state per camera
+  private readonly cam1PosTarget = new THREE.Vector3();
+  private readonly cam1LookTarget = new THREE.Vector3();
+  private readonly cam1PosCurrent = new THREE.Vector3();
+  private readonly cam1LookCurrent = new THREE.Vector3();
+  private cam1Initialized = false;
+
+  private readonly cam2PosTarget = new THREE.Vector3();
+  private readonly cam2LookTarget = new THREE.Vector3();
+  private readonly cam2PosCurrent = new THREE.Vector3();
+  private readonly cam2LookCurrent = new THREE.Vector3();
+  private cam2Initialized = false;
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -28,11 +36,17 @@ export class World {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 4000);
+    // Half-width aspect ratio for the split-screen views
+    const halfAspect = (innerWidth / 2) / innerHeight;
+    this.camera1 = new THREE.PerspectiveCamera(70, halfAspect, 0.1, 4000);
+    this.camera2 = new THREE.PerspectiveCamera(70, halfAspect, 0.1, 4000);
 
     window.addEventListener('resize', () => {
-      this.camera.aspect = innerWidth / innerHeight;
-      this.camera.updateProjectionMatrix();
+      const aspect = (innerWidth / 2) / innerHeight;
+      this.camera1.aspect = aspect;
+      this.camera2.aspect = aspect;
+      this.camera1.updateProjectionMatrix();
+      this.camera2.updateProjectionMatrix();
       this.renderer.setSize(innerWidth, innerHeight);
     });
 
@@ -40,14 +54,12 @@ export class World {
   }
 
   private buildScene(): void {
-    // Lighting
     this.scene.add(new THREE.AmbientLight(0xd0e8ff, 1.0));
 
     const sun = new THREE.DirectionalLight(0xfff5e0, 2.6);
     sun.position.set(300, 500, 200);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    // Shadow frustum sized for the realistic-scale track (~1000m diameter).
     sun.shadow.camera.near = 1;
     sun.shadow.camera.far = 2000;
     sun.shadow.camera.left = -600;
@@ -56,7 +68,6 @@ export class World {
     sun.shadow.camera.bottom = -600;
     this.scene.add(sun);
 
-    // Ground — large enough that the player never sees the edge from on-track.
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(1500, 1500),
       new THREE.MeshStandardMaterial({ map: this.makeGrassTex(), roughness: 0.95 }),
@@ -65,7 +76,6 @@ export class World {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Sky
     const sky = new Sky();
     sky.scale.setScalar(450000);
     this.scene.add(sky);
@@ -83,8 +93,6 @@ export class World {
     u['mieDirectionalG'].value = 0.82;
 
     this.scene.background = new THREE.Color(0x8ecae6);
-
-    // Distance fog tuned for the realistic-scale world.
     this.scene.fog = new THREE.Fog(0xd4eaf7, 400, 1800);
   }
 
@@ -93,10 +101,8 @@ export class World {
     const cv = document.createElement('canvas');
     cv.width = cv.height = size;
     const ctx = cv.getContext('2d')!;
-
     ctx.fillStyle = '#4a8c50';
     ctx.fillRect(0, 0, size, size);
-
     for (let i = 0; i < 4000; i++) {
       const x = Math.random() * size;
       const y = Math.random() * size;
@@ -106,46 +112,74 @@ export class World {
       ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
       ctx.fillRect(x, y, 1 + Math.random() * 2, 3 + Math.random() * 7);
     }
-
     const tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(750, 750);
     return tex;
   }
 
-  /**
-   * Smooth chase camera. Sits behind the car (along its yaw) and slightly above,
-   * with exponential damping toward the target so the view doesn't whip during turns.
-   *
-   * @param target  Car world position.
-   * @param yaw     Car yaw in radians.
-   * @param dt      Delta time (seconds) — used for frame-rate-independent damping.
-   */
-  followCar(target: THREE.Vector3, yaw: number, dt: number): void {
-    // Closer chase camera: 6m behind, 2.5m above, lookahead 1m above the car.
+  /** Smooth chase camera for Player 1 (left viewport). */
+  followCar1(target: THREE.Vector3, yaw: number, dt: number): void {
     const offset = new THREE.Vector3(0, 2.5, 6);
     offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-    this.camPosTarget.copy(target).add(offset);
-    this.camLookTarget.copy(target).add(new THREE.Vector3(0, 1.0, 0));
+    this.cam1PosTarget.copy(target).add(offset);
+    this.cam1LookTarget.copy(target).add(new THREE.Vector3(0, 1.0, 0));
 
-    if (!this.camInitialized) {
-      this.camPosCurrent.copy(this.camPosTarget);
-      this.camLookCurrent.copy(this.camLookTarget);
-      this.camInitialized = true;
+    if (!this.cam1Initialized) {
+      this.cam1PosCurrent.copy(this.cam1PosTarget);
+      this.cam1LookCurrent.copy(this.cam1LookTarget);
+      this.cam1Initialized = true;
     } else {
-      // Frame-rate-independent exponential smoothing.
-      // alpha = 1 - exp(-dt / tau). Position lags slightly more than look.
       const posAlpha = 1 - Math.exp(-dt / 0.15);
       const lookAlpha = 1 - Math.exp(-dt / 0.10);
-      this.camPosCurrent.lerp(this.camPosTarget, posAlpha);
-      this.camLookCurrent.lerp(this.camLookTarget, lookAlpha);
+      this.cam1PosCurrent.lerp(this.cam1PosTarget, posAlpha);
+      this.cam1LookCurrent.lerp(this.cam1LookTarget, lookAlpha);
     }
 
-    this.camera.position.copy(this.camPosCurrent);
-    this.camera.lookAt(this.camLookCurrent);
+    this.camera1.position.copy(this.cam1PosCurrent);
+    this.camera1.lookAt(this.cam1LookCurrent);
   }
 
+  /** Smooth chase camera for Player 2 (right viewport). */
+  followCar2(target: THREE.Vector3, yaw: number, dt: number): void {
+    const offset = new THREE.Vector3(0, 2.5, 6);
+    offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    this.cam2PosTarget.copy(target).add(offset);
+    this.cam2LookTarget.copy(target).add(new THREE.Vector3(0, 1.0, 0));
+
+    if (!this.cam2Initialized) {
+      this.cam2PosCurrent.copy(this.cam2PosTarget);
+      this.cam2LookCurrent.copy(this.cam2LookTarget);
+      this.cam2Initialized = true;
+    } else {
+      const posAlpha = 1 - Math.exp(-dt / 0.15);
+      const lookAlpha = 1 - Math.exp(-dt / 0.10);
+      this.cam2PosCurrent.lerp(this.cam2PosTarget, posAlpha);
+      this.cam2LookCurrent.lerp(this.cam2LookTarget, lookAlpha);
+    }
+
+    this.camera2.position.copy(this.cam2PosCurrent);
+    this.camera2.lookAt(this.cam2LookCurrent);
+  }
+
+  /** Render the scene twice, into left and right viewports for split-screen. */
   render(): void {
-    this.renderer.render(this.scene, this.camera);
+    const w = innerWidth;
+    const h = innerHeight;
+    const halfW = Math.floor(w / 2);
+
+    this.renderer.setScissorTest(true);
+
+    // ── Left half: Player 1 ──
+    this.renderer.setViewport(0, 0, halfW, h);
+    this.renderer.setScissor(0, 0, halfW, h);
+    this.renderer.render(this.scene, this.camera1);
+
+    // ── Right half: Player 2 ──
+    this.renderer.setViewport(halfW, 0, w - halfW, h);
+    this.renderer.setScissor(halfW, 0, w - halfW, h);
+    this.renderer.render(this.scene, this.camera2);
+
+    this.renderer.setScissorTest(false);
   }
 }
