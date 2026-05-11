@@ -23,7 +23,9 @@ car.yaw = track.startYaw;
 const carView = new CarView(car);
 world.scene.add(carView.group);
 
-const markers = track.checkpoints.map(cp => new CheckpointMarker(cp, world.scene));
+// Visual checkpoint markers disabled — minimal track aesthetic per design
+const markers: CheckpointMarker[] = [];
+void CheckpointMarker; // suppress unused-import warning
 
 const lapTracker = new LapTracker(track.checkpoints, track.startLine, TOTAL_LAPS);
 const gameState = new GameState(TOTAL_LAPS);
@@ -37,7 +39,6 @@ function refreshCheckpointVisuals() {
     else m.setStatus('future');
   }
 }
-refreshCheckpointVisuals();
 
 const engine = new Engine((dt) => {
   // Pure logic

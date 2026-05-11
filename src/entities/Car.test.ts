@@ -48,7 +48,9 @@ describe('Car', () => {
     const car = new Car();
     simulate(car, makeInput('w'), 30); // way past saturation
     expect(car.speed).toBeLessThanOrEqual(DEFAULT_CAR_PHYSICS.maxSpeed + 1e-6);
-    expect(car.speed).toBeGreaterThan(DEFAULT_CAR_PHYSICS.maxSpeed - 0.01);
+    // HP-curve asymptotes at max speed (skill spec: 0g acceleration at 250 km/h),
+    // so 30s of throttle gets within ~5 km/h of maxSpeed but not exactly there.
+    expect(car.speed).toBeGreaterThan(DEFAULT_CAR_PHYSICS.maxSpeed - 1.5);
   });
 
   it('S brakes (does not reverse) while moving forward', () => {
@@ -134,8 +136,10 @@ describe('Car', () => {
 
   it('inverts steering while reversing so the car backs the way you point', () => {
     const car = new Car();
-    simulate(car, makeInput('s'), 1.5); // build reverse speed
-    expect(car.speed).toBeLessThan(-1);
+    // Build reverse speed past the 20 km/h steering deadzone (skill: no steering below 20 km/h).
+    // 0.25g reverse takes ~3.4s to reach max 30 km/h, so simulate 5s to be safely past 20 km/h.
+    simulate(car, makeInput('s'), 5);
+    expect(car.speed).toBeLessThan(-DEFAULT_CAR_PHYSICS.maxReverseSpeed * 0.9);
     const yawBefore = car.yaw;
     // Pressing A while reversing should rotate yaw negative
     // (mirroring real-world reverse steering feel).
