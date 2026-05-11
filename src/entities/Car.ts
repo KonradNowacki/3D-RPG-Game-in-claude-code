@@ -36,10 +36,12 @@ export interface CarPhysicsConfig {
  * - Steering is speed-dependent (see `steerMultiplier`)
  */
 export const DEFAULT_CAR_PHYSICS: CarPhysicsConfig = {
-  brakeDecel: 11.76,       // 1.2g
+  // Aggressive arcade-style deceleration (overrides skill's 1.2g brake spec
+  // for tighter feel on the larger circuit).
+  brakeDecel: 28,          // ~2.85g — powerful brakes (stops from 250 km/h in ~2.5s)
   reverseAccel: 2.45,      // 0.25g
-  rollingResistance: 1.5,  // mild engine braking when coasting
-  offTrackDrag: 14,        // grass = 60% grip loss → heavy drag
+  rollingResistance: 8,    // strong engine braking when coasting
+  offTrackDrag: 20,        // grass = significant drag penalty
   maxSpeed: 69.4,          // 250 km/h
   maxReverseSpeed: 8.3,    // 30 km/h
   turnSpeed: 2.2,

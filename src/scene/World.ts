@@ -44,21 +44,21 @@ export class World {
     this.scene.add(new THREE.AmbientLight(0xd0e8ff, 1.0));
 
     const sun = new THREE.DirectionalLight(0xfff5e0, 2.6);
-    sun.position.set(80, 140, 60);
+    sun.position.set(300, 500, 200);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    // Shadow frustum sized to cover the whole 130m-diameter track.
+    // Shadow frustum sized for the realistic-scale track (~1000m diameter).
     sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 400;
-    sun.shadow.camera.left = -120;
-    sun.shadow.camera.right = 120;
-    sun.shadow.camera.top = 120;
-    sun.shadow.camera.bottom = -120;
+    sun.shadow.camera.far = 2000;
+    sun.shadow.camera.left = -600;
+    sun.shadow.camera.right = 600;
+    sun.shadow.camera.top = 600;
+    sun.shadow.camera.bottom = -600;
     this.scene.add(sun);
 
-    // Ground — 300×300 m so the player never sees the edge from on-track.
+    // Ground — large enough that the player never sees the edge from on-track.
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(300, 300),
+      new THREE.PlaneGeometry(1500, 1500),
       new THREE.MeshStandardMaterial({ map: this.makeGrassTex(), roughness: 0.95 }),
     );
     ground.rotation.x = -Math.PI / 2;
@@ -84,8 +84,8 @@ export class World {
 
     this.scene.background = new THREE.Color(0x8ecae6);
 
-    // Subtle distance fog tuned for the larger world.
-    this.scene.fog = new THREE.Fog(0xd4eaf7, 120, 500);
+    // Distance fog tuned for the realistic-scale world.
+    this.scene.fog = new THREE.Fog(0xd4eaf7, 400, 1800);
   }
 
   private makeGrassTex(): THREE.CanvasTexture {
@@ -109,7 +109,7 @@ export class World {
 
     const tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(150, 150);
+    tex.repeat.set(750, 750);
     return tex;
   }
 
@@ -122,10 +122,11 @@ export class World {
    * @param dt      Delta time (seconds) — used for frame-rate-independent damping.
    */
   followCar(target: THREE.Vector3, yaw: number, dt: number): void {
-    const offset = new THREE.Vector3(0, 4.5, 11);
+    // Closer chase camera: 6m behind, 2.5m above, lookahead 1m above the car.
+    const offset = new THREE.Vector3(0, 2.5, 6);
     offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     this.camPosTarget.copy(target).add(offset);
-    this.camLookTarget.copy(target).add(new THREE.Vector3(0, 1.2, 0));
+    this.camLookTarget.copy(target).add(new THREE.Vector3(0, 1.0, 0));
 
     if (!this.camInitialized) {
       this.camPosCurrent.copy(this.camPosTarget);

@@ -18,6 +18,7 @@ const track = new RaceTrack(world.scene);
 
 const car = new Car();
 car.position.copy(track.startPosition);
+car.position.y = track.heightAt(car.position.x, car.position.z);
 car.yaw = track.startYaw;
 
 const carView = new CarView(car);
@@ -44,6 +45,8 @@ const engine = new Engine((dt) => {
   // Pure logic
   const onTrack = track.isOnTrack(car.position.x, car.position.z);
   car.update(dt, input, onTrack);
+  // Follow track elevation (climbs at Eau Rouge, etc.)
+  car.position.y = track.heightAt(car.position.x, car.position.z);
 
   const prevCheckpointIdx = lapTracker.nextCheckpointIndex;
   const prevLapsCompleted = lapTracker.lapsCompleted;
