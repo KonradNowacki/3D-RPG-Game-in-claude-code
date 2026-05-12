@@ -183,4 +183,71 @@ describe('Car', () => {
     expect(f.x).toBeCloseTo(-1, 6);
     expect(f.z).toBeCloseTo(0, 6);
   });
+
+  it('decelerates while holding steering — longer hold = more drag', () => {
+    // Get the car up to a meaningful speed first.
+    const cornering = new Car();
+    const straight = new Car();
+    simulate(cornering, makeInput('w'), 3);
+    simulate(straight, makeInput('w'), 3);
+    expect(cornering.speed).toBeCloseTo(straight.speed, 5);
+
+    // Now both throttle, but one steers while the other doesn't.
+    simulate(cornering, makeInput('w', 'a'), 2.0);
+    simulate(straight, makeInput('w'), 2.0);
+
+    // Cornering car must be slower than the straight-line car.
+    expect(cornering.speed).toBeLessThan(straight.speed);
+    // And the steerHoldTime must have accumulated.
+    expect(cornering.steerHoldTime).toBeGreaterThan(0);
+  });
+
+  it('releasing steering resets the cornering-drag timer', () => {
+    const car = new Car();
+    simulate(car, makeInput('w'), 2);          // build speed
+    simulate(car, makeInput('w', 'a'), 1.0);   // hold steering for 1s
+    expect(car.steerHoldTime).toBeGreaterThan(0.5);
+
+    simulate(car, makeInput('w'), 0.5);        // release steering for 0.5s
+    expect(car.steerHoldTime).toBe(0);
+  });
+
+  it('off-track caps forward speed at the grass cap (~30 km/h)', () => {
+    const car = new Car();
+    // Hammer the throttle on grass — speed must not exceed the grass cap.
+    simulate(car, makeInput('w'), 6, false);
+    expect(car.speed).toBeLessThan(10);   // 8.3 m/s + a tiny margin
+    expect(car.speed).toBeGreaterThan(6); // car is still moving meaningfully
+  });
+
+  it('off-track high-speed entry decelerates the car down to grass cap', () => {
+    const car = new Car();
+    car.speed = 30;                               // ~108 km/h on track
+    simulate(car, makeInput('w'), 1.5, false);    // throttle on grass
+    // Drag should pull it down toward 8.3 m/s
+    expect(car.speed).toBeLessThan(10);
+  });
+
+  it('off-track car can still reverse, stop, and re-accelerate', () => {
+    const car = new Car();
+    // Drive forward to grass cap
+    simulate(car, makeInput('w'), 4, false);
+    expect(car.speed).toBeGreaterThan(6);
+    // Brake then reverse
+    simulate(car, makeInput('s'), 4, false);
+    expect(car.speed).toBeLessThan(0);
+    // Stop coasting
+    simulate(car, makeInput(), 5, false);
+    expect(car.speed).toBe(0);
+  });
+
+  it('steering responds (slowly) at very low speed (no hard deadzone above 0)', () => {
+    const car = new Car();
+    simulate(car, makeInput('w'), 0.4);  // a small touch of throttle, well under 50 km/h
+    expect(car.speed).toBeGreaterThan(0);
+    const yawBefore = car.yaw;
+    simulate(car, makeInput('w', 'a'), 0.6);
+    // Yaw should change measurably even at modest speed
+    expect(car.yaw).toBeGreaterThan(yawBefore + 0.05);
+  });
 });

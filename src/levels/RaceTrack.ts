@@ -48,8 +48,12 @@ export class RaceTrack {
   readonly startPosition: THREE.Vector3;
   readonly startYaw: number;
 
-  /** Centerline samples (x, y, z) used both for ribbon mesh and heightAt queries. */
-  private centerlineSamples: Array<{ x: number; y: number; z: number }> = [];
+  /**
+   * Centerline samples (x, y, z) used for ribbon mesh and heightAt queries.
+   * `curbSide` is +1 if the curb is on the "+perp" side at this sample,
+   * -1 if on the "-perp" side, or 0 if there's no curb (straight segment).
+   */
+  private centerlineSamples: Array<{ x: number; y: number; z: number; curbSide: number }> = [];
 
   constructor(scene: THREE.Scene) {
     this.segments = RaceTrack.buildSegments();
@@ -133,8 +137,8 @@ export class RaceTrack {
   }
 
   /** Sample the centerline into a closed list of 3D points (for ribbon mesh & height query). */
-  private sampleCenterline(): Array<{ x: number; y: number; z: number }> {
-    const pts: Array<{ x: number; y: number; z: number }> = [];
+  private sampleCenterline(): Array<{ x: number; y: number; z: number; curbSide: number }> {
+    const pts: Array<{ x: number; y: number; z: number; curbSide: number }> = [];
     const STEP = 4;
     for (const seg of this.segments) {
       if (seg.kind === 'straight') {
@@ -148,9 +152,13 @@ export class RaceTrack {
             x: seg.x1 + t * dx,
             y: seg.startY + t * (seg.endY - seg.startY),
             z: seg.z1 + t * dz,
+            curbSide: 0,
           });
         }
       } else {
+        // For CCW arcs (sweep > 0) the arc center is on the +perp side of
+        // forward — curb sits there. CW arcs put curb on the -perp side.
+        const curbSide = seg.sweep > 0 ? +1 : -1;
         const arcLen = Math.abs(seg.sweep) * seg.radius;
         const n = Math.max(12, Math.ceil(arcLen / STEP));
         for (let i = 0; i < n; i++) {
@@ -160,6 +168,7 @@ export class RaceTrack {
             x: seg.cx + seg.radius * Math.cos(angle),
             y: seg.startY + t * (seg.endY - seg.startY),
             z: seg.cz + seg.radius * Math.sin(angle),
+            curbSide,
           });
         }
       }
@@ -190,8 +199,10 @@ export class RaceTrack {
       roughness: 0.85,
       metalness: 0.0,
     });
+    // Red-white striped curb material driven by a procedural texture
+    const stripeTex = this.makeRedWhiteStripedTexture();
     const innerCurbMat = new THREE.MeshStandardMaterial({
-      color: 0xcc1414,
+      map: stripeTex,
       roughness: 0.8,
     });
 
@@ -259,29 +270,302 @@ export class RaceTrack {
       this.buildArcCurb(scene, seg, innerCurbMat);
     }
 
+    // ── Embankment skirts: smooth grass slopes under elevated sections ───
+    this.buildEmbankment(scene, pts);
+
+    // ── White side lines: continuous markings along both edges ───────────
+    this.buildSideLines(scene, pts);
+
+    // ── Banner barriers: vertical advertising panels along outer edge ────
+    this.buildBanners(scene, pts);
+
     // ── Start/Finish line: visible checkered band across the track ───────
     this.buildStartFinishLine(scene);
   }
 
-  /** Build inner curb as a BufferGeometry ribbon that follows segment elevation. */
+  /**
+   * Build smooth grass embankment skirts on both sides of the road.
+   * Where the road is elevated, the skirt forms a CURVED slope (quadratic
+   * profile, drops fast near the road then tapers off) from the road
+   * shoulder down to ground level (Y=0). On flat sections the skirt is
+   * flush with the ground.
+   *
+   * Uses multiple cross-section layers per centerline sample to give a
+   * smooth curved silhouette rather than a single flat facet.
+   */
+  private buildEmbankment(scene: THREE.Scene, pts: Array<{ x: number; y: number; z: number }>): void {
+    const n = pts.length;
+    const hw = this.trackHalfWidth;
+    const SKIRT_WIDTH = 35;        // lateral extent — gentle slope
+    const LAYERS = 5;              // cross-section vertices per side (for smoothness)
+
+    const grassTex = this.makeGrassTexture();
+    const grassMat = new THREE.MeshStandardMaterial({
+      map: grassTex,
+      roughness: 0.95,
+      metalness: 0.0,
+    });
+
+    for (const side of [+1, -1] as const) {
+      const positions: number[] = [];
+      const uvs: number[] = [];
+      const indices: number[] = [];
+
+      for (let i = 0; i < n; i++) {
+        const curr = pts[i];
+        const next = pts[(i + 1) % n];
+        const prev = pts[(i - 1 + n) % n];
+
+        let tx = (next.x - curr.x) + (curr.x - prev.x);
+        let tz = (next.z - curr.z) + (curr.z - prev.z);
+        const tlen = Math.sqrt(tx * tx + tz * tz) || 1;
+        tx /= tlen;
+        tz /= tlen;
+        const px = -tz * side;
+        const pz =  tx * side;
+
+        // Generate LAYERS cross-section vertices. t goes 0 (track shoulder)
+        // to 1 (skirt foot at ground level). Y profile is quadratic for
+        // smooth concave slope: y(t) = trackY * (1 - t)^2.
+        for (let li = 0; li < LAYERS; li++) {
+          const t = li / (LAYERS - 1);
+          const lateral = hw + t * SKIRT_WIDTH;
+          const yFalloff = (1 - t) * (1 - t);
+          const xPos = curr.x + px * lateral;
+          const zPos = curr.z + pz * lateral;
+          const yPos = curr.y * yFalloff;
+          positions.push(xPos, yPos, zPos);
+          // UV tiles the grass texture — V follows track length, U lateral
+          uvs.push(t * 2, i * 0.6);
+        }
+      }
+
+      // Triangulate the (LAYERS-1) strips per cross-section, closing loop.
+      for (let i = 0; i < n; i++) {
+        const i2 = (i + 1) % n;
+        for (let li = 0; li < LAYERS - 1; li++) {
+          const a = i  * LAYERS + li;
+          const b = i  * LAYERS + li + 1;
+          const c = i2 * LAYERS + li;
+          const d = i2 * LAYERS + li + 1;
+          if (side === +1) {
+            indices.push(a, c, b, c, d, b);
+          } else {
+            indices.push(a, b, c, c, b, d);
+          }
+        }
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, grassMat);
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+  }
+
+  /**
+   * Build two continuous white side lines along the track edges. The line
+   * on each side sits at the outermost stripe of asphalt; on segments where
+   * a curb occupies the inner edge, the line is shifted inward by curbWidth
+   * so it always stays on the asphalt just outside the curb.
+   */
+  private buildSideLines(
+    scene: THREE.Scene,
+    pts: Array<{ x: number; y: number; z: number; curbSide: number }>,
+  ): void {
+    const LINE_WIDTH = 0.3;
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    for (const side of [+1, -1] as const) {
+      const positions: number[] = [];
+      const indices: number[] = [];
+      const n = pts.length;
+
+      for (let i = 0; i < n; i++) {
+        const curr = pts[i];
+        const next = pts[(i + 1) % n];
+        const prev = pts[(i - 1 + n) % n];
+
+        let tx = (next.x - curr.x) + (curr.x - prev.x);
+        let tz = (next.z - curr.z) + (curr.z - prev.z);
+        const tlen = Math.sqrt(tx * tx + tz * tz) || 1;
+        tx /= tlen;
+        tz /= tlen;
+        const px = -tz;
+        const pz = tx;
+
+        // Outer edge of line = at road edge, minus curb shift if curb on this side.
+        const curbShift = (curr.curbSide === side) ? this.curbWidth : 0;
+        const distOuter = (this.trackHalfWidth - curbShift) * side;
+        const distInner = distOuter - LINE_WIDTH * side;
+
+        const y = curr.y + 0.02; // slightly above asphalt to avoid z-fighting
+        positions.push(curr.x + px * distOuter, y, curr.z + pz * distOuter);
+        positions.push(curr.x + px * distInner, y, curr.z + pz * distInner);
+      }
+
+      for (let i = 0; i < n; i++) {
+        const a = i * 2;
+        const b = a + 1;
+        const c = ((i + 1) % n) * 2;
+        const d = c + 1;
+        if (side === +1) {
+          indices.push(a, c, b, c, d, b);
+        } else {
+          indices.push(a, b, c, c, b, d);
+        }
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+      geo.computeVertexNormals();
+      scene.add(new THREE.Mesh(geo, lineMat));
+    }
+  }
+
+  /** Procedural grass texture for the embankment slopes. */
+  private makeGrassTexture(): THREE.CanvasTexture {
+    const size = 256;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const ctx = cv.getContext('2d')!;
+    ctx.fillStyle = '#4a8c50';
+    ctx.fillRect(0, 0, size, size);
+    for (let i = 0; i < 2000; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const r = 25 + Math.random() * 35;
+      const g = 90 + Math.random() * 70;
+      const b = 20 + Math.random() * 25;
+      ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
+      ctx.fillRect(x, y, 1 + Math.random() * 2, 3 + Math.random() * 7);
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 30);
+    return tex;
+  }
+
+  /** Procedural red/white striped texture for the curbs. */
+  private makeRedWhiteStripedTexture(): THREE.CanvasTexture {
+    const cv = document.createElement('canvas');
+    cv.width = 64;
+    cv.height = 32;
+    const ctx = cv.getContext('2d')!;
+    ctx.fillStyle = '#cc1414';
+    ctx.fillRect(0, 0, 32, 32);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(32, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
+  }
+
+  /**
+   * Place vertical advertising banners at regular intervals along the outer
+   * edge of the track. Each banner is a thin coloured panel standing upright
+   * on the road shoulder; it serves as a visual track boundary.
+   */
+  private buildBanners(scene: THREE.Scene, pts: Array<{ x: number; y: number; z: number }>): void {
+    const colors = [0xc62828, 0x1565c0, 0xf9a825, 0x2e7d32, 0xffffff, 0xff8f00];
+    const BANNER_SPACING = 28;   // metres between banners
+    const BANNER_W = 5;
+    const BANNER_H = 1.8;
+
+    const n = pts.length;
+    let distSinceLast = BANNER_SPACING; // place first one immediately
+
+    for (let i = 0; i < n; i++) {
+      const curr = pts[i];
+      const next = pts[(i + 1) % n];
+      const fdx = next.x - curr.x;
+      const fdz = next.z - curr.z;
+      const segLen = Math.sqrt(fdx * fdx + fdz * fdz);
+      distSinceLast += segLen;
+
+      if (distSinceLast < BANNER_SPACING) continue;
+      distSinceLast = 0;
+
+      // Tangent along forward direction
+      const tx = fdx / (segLen || 1);
+      const tz = fdz / (segLen || 1);
+      // Outer perpendicular (right side of forward in our convention)
+      const px = -tz;
+      const pz = tx;
+
+      // Place banner on the OUTER edge of the road (right side, away from inner curb)
+      // For most arcs, "right side" of forward direction is the outer side of the turn.
+      const bx = curr.x - px * (this.trackHalfWidth + 1.5);
+      const bz = curr.z - pz * (this.trackHalfWidth + 1.5);
+      const by = curr.y + BANNER_H / 2;
+
+      const color = colors[Math.floor(((i / 4) % colors.length))];
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.7,
+        side: THREE.DoubleSide,
+      });
+      const geo = new THREE.PlaneGeometry(BANNER_W, BANNER_H);
+      const mesh = new THREE.Mesh(geo, mat);
+      // Orient the banner so its width follows the track tangent
+      mesh.position.set(bx, by, bz);
+      mesh.rotation.y = Math.atan2(tx, tz); // face perpendicular to tangent
+      mesh.castShadow = true;
+      scene.add(mesh);
+    }
+  }
+
+  /**
+   * Build inner curb as a BufferGeometry ribbon that follows segment elevation.
+   * Includes UV coords so a red-white striped texture tiles along the arc
+   * length, producing alternating ~1.5m red/white blocks.
+   */
   private buildArcCurb(scene: THREE.Scene, seg: ArcSeg, mat: THREE.Material): void {
     const innerR = seg.radius - this.trackHalfWidth;    // track inner edge
     const outerR = innerR + this.curbWidth;             // curb's outer edge (on track)
     const arcLen = Math.abs(seg.sweep) * seg.radius;
     const n = Math.max(16, Math.ceil(arcLen / 3));
+    const STRIPE_PERIOD = 3; // metres per red+white pair → ~1.5m blocks
 
     const positions: number[] = [];
+    const uvs: number[] = [];
     const indices: number[] = [];
+
+    let cumLen = 0;
+    let prevX = 0, prevZ = 0;
 
     for (let i = 0; i <= n; i++) {
       const t = i / n;
       const angle = seg.startAngle + t * seg.sweep;
       const y = seg.startY + t * (seg.endY - seg.startY) + this.curbHeight;
+      const xInner = seg.cx + innerR * Math.cos(angle);
+      const zInner = seg.cz + innerR * Math.sin(angle);
+      const xOuter = seg.cx + outerR * Math.cos(angle);
+      const zOuter = seg.cz + outerR * Math.sin(angle);
+
+      if (i > 0) {
+        const dx = xInner - prevX;
+        const dz = zInner - prevZ;
+        cumLen += Math.sqrt(dx * dx + dz * dz);
+      }
+      prevX = xInner;
+      prevZ = zInner;
+
       // a = at innerR (track inner edge), b = at outerR (deeper into road)
-      positions.push(
-        seg.cx + innerR * Math.cos(angle), y, seg.cz + innerR * Math.sin(angle),
-        seg.cx + outerR * Math.cos(angle), y, seg.cz + outerR * Math.sin(angle),
-      );
+      positions.push(xInner, y, zInner);
+      positions.push(xOuter, y, zOuter);
+      // U follows arc length so stripes appear along the curb; V across width
+      const u = cumLen / STRIPE_PERIOD;
+      uvs.push(u, 0);
+      uvs.push(u, 1);
     }
 
     for (let i = 0; i < n; i++) {
@@ -289,8 +573,6 @@ export class RaceTrack {
       const b = a + 1;
       const c = (i + 1) * 2;
       const d = c + 1;
-      // Determine winding so top face points up. For CCW arcs (sweep > 0)
-      // inner radius is on the "left" of forward, swept counterclockwise.
       if (seg.sweep > 0) {
         indices.push(a, c, b, c, d, b);
       } else {
@@ -300,6 +582,7 @@ export class RaceTrack {
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
     geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, mat);

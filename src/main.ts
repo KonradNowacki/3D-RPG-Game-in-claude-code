@@ -36,8 +36,8 @@ const p2Input = new FilteredInput(
 const world = new World();
 const track = new RaceTrack(world.scene);
 
-// Scatter trees, houses, and spectators on the grass (off-track only)
-new Decorations(world.scene, track, 700).scatter({ trees: 220, houses: 30, people: 70 });
+// Scatter dense trees, houses, and spectators on the grass (off-track only)
+new Decorations(world.scene, track, 700).scatter({ trees: 600, houses: 50, people: 120 });
 
 // ── Player 1 (RED, WASD, left split) ──────────────────────────────────────
 const car1 = new Car();
@@ -76,6 +76,9 @@ const engine = new Engine((dt) => {
   // ── Update each car ─────────────────────────────────────────────────────
   updateCar(car1, p1Input, dt, () => { vy1 = stepVertical(car1, vy1, dt); }, () => { vy1 = 0; });
   updateCar(car2, p2Input, dt, () => { vy2 = stepVertical(car2, vy2, dt); }, () => { vy2 = 0; });
+
+  // ── Car-vs-car collision: simple push-apart with energy loss ────────────
+  resolveCarCollision(car1, car2);
 
   // ── Lap tracking ────────────────────────────────────────────────────────
   lapTracker1.update(car1.position.x, car1.position.z);
@@ -135,4 +138,30 @@ function stepVertical(car: Car, vy: number, dt: number): number {
     return 0;
   }
   return vy;
+}
+
+/**
+ * Resolve car-vs-car collision: if the two cars are closer than CAR_RADIUS,
+ * separate them along the contact normal (each pushed half the overlap) and
+ * bleed speed on both as a soft bounce. Pure 2D (XZ) check — Y is ignored
+ * so colliding while one car is mid-air (off-track fall) still works.
+ */
+function resolveCarCollision(a: Car, b: Car): void {
+  const CAR_RADIUS = 1.8; // ~3.6m separation between centres (cars are 2×4m)
+  const dx = a.position.x - b.position.x;
+  const dz = a.position.z - b.position.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist <= 0 || dist >= CAR_RADIUS * 2) return;
+
+  const overlap = CAR_RADIUS * 2 - dist;
+  const nx = dx / dist;
+  const nz = dz / dist;
+  // Push apart by half-overlap each
+  a.position.x += nx * overlap * 0.5;
+  a.position.z += nz * overlap * 0.5;
+  b.position.x -= nx * overlap * 0.5;
+  b.position.z -= nz * overlap * 0.5;
+  // Soft bounce: both lose 30% speed
+  a.speed *= 0.7;
+  b.speed *= 0.7;
 }

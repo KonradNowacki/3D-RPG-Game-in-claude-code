@@ -8,14 +8,36 @@ A browser-based 3D game built with **Three.js** and **TypeScript**, bundled with
 
 ## Current Project: Racing Game
 
-The game has been rebuilt as an arcade-style racing simulator with the following features:
+An arcade racing simulator with two-player split-screen, a Spa-Francorchamps inspired circuit, and full 3D elevation.
 
-- **World:** 300×300m grass field with a technical racing circuit
-- **HUD:** Real-time display of lap count, elapsed time, speed (km/h)
-- **Win Condition:** Complete 3 laps to trigger "Race Complete!" overlay
+### World
+- **1500 × 1500 m** grass plain populated with **~600 procedural trees, 50 houses, 120 cheering spectators** (all auto-distributed off the track with safety buffers).
+- **~3.4 km Spa-inspired circuit** with 12 segments and realistic elevation profile (Eau Rouge climbs Y=0 → 25 m, Kemmel runs at altitude, embankments support elevated sections).
+- **Embankment skirts** beneath elevated road so it doesn't float — slope from track shoulder down to grass.
+- **Banner barriers** placed along the outer edge every ~28 m (mixed colours, double-sided panels).
+- **Inner red curbs** on the inside of every corner, flush with the road and following elevation.
+- **Checkered start/finish line** at the far end of the start straight.
+
+### Split-screen 2 players
+- **Vertical split** — left half = Player 1, right half = Player 2.
+- **P1 controls (red car):** W/A/S/D.
+- **P2 controls (blue car):** Arrow keys.
+- Each player has independent chase camera (2.5 m above, 6 m behind), lap counter, timer, and speedometer.
+- Cars collide and bounce off each other (soft impact loses 30 % speed per side).
+- First player to finish 3 laps triggers the shared "P1/P2 Wins!" overlay.
+
+### Car (Mercedes-AMG GTR per `.claude/skills/car/SKILL.md`)
+- Horsepower-curve acceleration (0.75 g → 0 g across 0 → 250 km/h).
+- 1.2 g+ braking; speed-dependent steering response with 20 km/h deadzone.
+- **Steering-induced drag** — the longer A/D (or arrow left/right) is held, the more longitudinal speed bleeds (caps at ~0.5 g). Resets on release.
+- Falls to grass level (Y = 0) under gravity if it leaves an elevated road section.
+
+### HUD & game loop
+- Two HUDs (one per player half) with lap, time, speed.
+- Shared end-of-race overlay when either player completes 3 laps.
 
 ## Agents
-
+.
 **Prefer using specialized agents rather than implementing directly.** Available agents:
 
 - **game-feature-builder** — Use for implementing new game features, levels, mechanics, UI systems, and content additions. This agent handles architecture decisions, design validation, integration testing, and full implementation lifecycle.
