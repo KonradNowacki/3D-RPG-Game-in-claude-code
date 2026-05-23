@@ -8,7 +8,7 @@ export interface CarModelTemplate {
 }
 
 const MODEL_URL = '/models/rb20/rb20.gltf';
-const TARGET_LENGTH = 5.28;
+const TARGET_LENGTH = 10.56;
 
 let cached: Promise<CarModelTemplate> | null = null;
 

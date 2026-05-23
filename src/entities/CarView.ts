@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Car } from './Car';
 import { loadCarModel, cloneCarModel } from '../assets/CarModel';
 
-const WHEEL_RADIUS = 0.504;
+const WHEEL_RADIUS = 1.008;
 const PAINT_RE = /paint|body|coat/i;
 const WHEEL_RE = /wheel|tire|rim/i;
 const GLASS_RE = /glass|window|windshield/i;
