@@ -11,7 +11,6 @@ import { HUD } from './ui/HUD';
 import { SoundManager } from './audio/SoundManager';
 
 const TOTAL_LAPS = 3;
-const GRAVITY = 28; // m/s² (arcade-fast fall for off-track elevated drops)
 
 // ── Input adapters: each player only sees their own key set ──────────────
 /**
@@ -53,9 +52,10 @@ car2.position.x -= 4; // mirrored offset
 car2.position.y = track.heightAt(car2.position.x, car2.position.z);
 car2.yaw = track.startYaw;
 
+const heightAt = (x: number, z: number): number => track.groundHeightAt(x, z);
 const [carView1, carView2] = await Promise.all([
-  CarView.create(car1, 0xd92b2b), // red
-  CarView.create(car2, 0x1e6ce6), // blue
+  CarView.create(car1, 0xd92b2b, heightAt), // red
+  CarView.create(car2, 0x1e6ce6, heightAt), // blue
 ]);
 world.scene.add(carView1.group);
 world.scene.add(carView2.group);
@@ -71,14 +71,10 @@ const hud2 = new HUD('right');
 // One shared sound manager (mixing two cars later if needed; for now reacts to P1)
 const sounds = new SoundManager();
 
-// Vertical velocity for off-track fall behavior
-let vy1 = 0;
-let vy2 = 0;
-
 const engine = new Engine((dt) => {
   // ── Update each car ─────────────────────────────────────────────────────
-  updateCar(car1, p1Input, dt, () => { vy1 = stepVertical(car1, vy1, dt); }, () => { vy1 = 0; });
-  updateCar(car2, p2Input, dt, () => { vy2 = stepVertical(car2, vy2, dt); }, () => { vy2 = 0; });
+  updateCar(car1, p1Input, dt);
+  updateCar(car2, p2Input, dt);
 
   // ── Car-vs-car collision: simple push-apart with energy loss ────────────
   resolveCarCollision(car1, car2);
@@ -113,35 +109,10 @@ engine.start();
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function updateCar(
-  car: Car,
-  pInput: CarInput,
-  dt: number,
-  onOffTrack: () => void,
-  onOnTrack: () => void,
-): void {
+function updateCar(car: Car, pInput: CarInput, dt: number): void {
   const onTrack = track.isOnTrack(car.position.x, car.position.z);
   car.update(dt, pInput, onTrack);
-  if (onTrack) {
-    car.position.y = track.heightAt(car.position.x, car.position.z);
-    onOnTrack();
-  } else {
-    onOffTrack();
-  }
-}
-
-/**
- * Off-track vertical step: apply gravity, fall toward grass (Y=0), and clamp
- * once landed. Returns the new vy for the caller to persist between frames.
- */
-function stepVertical(car: Car, vy: number, dt: number): number {
-  vy -= GRAVITY * dt;
-  car.position.y += vy * dt;
-  if (car.position.y <= 0) {
-    car.position.y = 0;
-    return 0;
-  }
-  return vy;
+  car.position.y = track.groundHeightAt(car.position.x, car.position.z);
 }
 
 /**

@@ -42,6 +42,11 @@ export class RaceTrack {
   readonly curbWidth = 1.5;
   readonly curbHeight = 0.15;      // low-profile curb (flush with road)
 
+  // Lateral extent of the grass embankment slope. Must be referenced by both
+  // buildEmbankment (visual mesh) and groundHeightAt (physics) so that the
+  // car sits on the visual surface exactly.
+  private static readonly SKIRT_WIDTH = 35;
+
   readonly checkpoints: Checkpoint[];
   readonly startLine: StartLine;
   readonly segments: readonly Segment[];
@@ -210,6 +215,46 @@ export class RaceTrack {
     return bestY;
   }
 
+  /**
+   * Returns the terrain height at any world (x, z): track surface inside the
+   * road, embankment slope on the skirt, or Y=0 on flat grass. The skirt
+   * formula `trackY * (1 - s)^2` must match buildEmbankment exactly so the
+   * car sits flush on the visual mesh instead of clipping or hovering.
+   */
+  groundHeightAt(x: number, z: number): number {
+    const samples = this.centerlineSamples;
+    const n = samples.length;
+    if (n === 0) return 0;
+    if (n === 1) return samples[0].y;
+    let bestDist2 = Infinity;
+    let bestTrackY = samples[0].y;
+    for (let i = 0; i < n; i++) {
+      const a = samples[i];
+      const b = samples[(i + 1) % n];
+      const ex = b.x - a.x;
+      const ez = b.z - a.z;
+      const len2 = ex * ex + ez * ez;
+      let t = len2 > 0 ? ((x - a.x) * ex + (z - a.z) * ez) / len2 : 0;
+      if (t < 0) t = 0;
+      else if (t > 1) t = 1;
+      const px = a.x + ex * t;
+      const pz = a.z + ez * t;
+      const dx = x - px;
+      const dz = z - pz;
+      const d = dx * dx + dz * dz;
+      if (d < bestDist2) {
+        bestDist2 = d;
+        bestTrackY = a.y + (b.y - a.y) * t;
+      }
+    }
+    const lateral = Math.sqrt(bestDist2);
+    if (lateral <= this.trackHalfWidth) return bestTrackY;
+    const s = (lateral - this.trackHalfWidth) / RaceTrack.SKIRT_WIDTH;
+    if (s >= 1) return 0;
+    const falloff = (1 - s) * (1 - s);
+    return bestTrackY * falloff;
+  }
+
   private buildGeometry(scene: THREE.Scene): void {
     const asphaltMat = new THREE.MeshStandardMaterial({
       color: 0x3a3a3a,
@@ -313,7 +358,7 @@ export class RaceTrack {
   private buildEmbankment(scene: THREE.Scene, pts: Array<{ x: number; y: number; z: number }>): void {
     const n = pts.length;
     const hw = this.trackHalfWidth;
-    const SKIRT_WIDTH = 35;        // lateral extent — gentle slope
+    const SKIRT_WIDTH = RaceTrack.SKIRT_WIDTH;
     const LAYERS = 5;              // cross-section vertices per side (for smoothness)
 
     const grassTex = this.makeGrassTexture();
@@ -366,9 +411,9 @@ export class RaceTrack {
           const c = i2 * LAYERS + li;
           const d = i2 * LAYERS + li + 1;
           if (side === +1) {
-            indices.push(a, c, b, c, d, b);
-          } else {
             indices.push(a, b, c, c, b, d);
+          } else {
+            indices.push(a, c, b, c, d, b);
           }
         }
       }
