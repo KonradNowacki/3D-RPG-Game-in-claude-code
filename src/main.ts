@@ -45,8 +45,6 @@ car1.position.copy(track.startPosition);
 car1.position.x += 4; // small lateral offset so cars don't overlap at start
 car1.position.y = track.heightAt(car1.position.x, car1.position.z);
 car1.yaw = track.startYaw;
-const carView1 = new CarView(car1, 0xd92b2b); // red
-world.scene.add(carView1.group);
 
 // ── Player 2 (BLUE, arrows, right split) ──────────────────────────────────
 const car2 = new Car();
@@ -54,7 +52,12 @@ car2.position.copy(track.startPosition);
 car2.position.x -= 4; // mirrored offset
 car2.position.y = track.heightAt(car2.position.x, car2.position.z);
 car2.yaw = track.startYaw;
-const carView2 = new CarView(car2, 0x1e6ce6); // blue
+
+const [carView1, carView2] = await Promise.all([
+  CarView.create(car1, 0xd92b2b), // red
+  CarView.create(car2, 0x1e6ce6), // blue
+]);
+world.scene.add(carView1.group);
 world.scene.add(carView2.group);
 
 // ── Per-player race state ─────────────────────────────────────────────────
