@@ -109,6 +109,7 @@ const engine = new Engine((dt) => {
 engine.start();
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
 function updateCar(
   car: Car,
   pInput: CarInput,

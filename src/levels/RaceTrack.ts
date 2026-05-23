@@ -178,16 +178,33 @@ export class RaceTrack {
 
   /** Returns the elevation (Y) of the track surface at a given (x, z) position. */
   heightAt(x: number, z: number): number {
-    if (this.centerlineSamples.length === 0) return 0;
+    const samples = this.centerlineSamples;
+    const n = samples.length;
+    if (n === 0) return 0;
+    if (n === 1) return samples[0].y;
+    // Find the closest centerline segment (closed loop) and linearly interpolate Y
+    // along it. Prevents Y from snapping between discrete samples on slopes.
     let bestDist = Infinity;
-    let bestY = 0;
-    for (const p of this.centerlineSamples) {
-      const dx = x - p.x;
-      const dz = z - p.z;
+    let bestY = samples[0].y;
+    for (let i = 0; i < n; i++) {
+      const a = samples[i];
+      const b = samples[(i + 1) % n];
+      const ax = a.x, az = a.z;
+      const bx = b.x, bz = b.z;
+      const ex = bx - ax;
+      const ez = bz - az;
+      const len2 = ex * ex + ez * ez;
+      let t = len2 > 0 ? ((x - ax) * ex + (z - az) * ez) / len2 : 0;
+      if (t < 0) t = 0;
+      else if (t > 1) t = 1;
+      const px = ax + ex * t;
+      const pz = az + ez * t;
+      const dx = x - px;
+      const dz = z - pz;
       const d = dx * dx + dz * dz;
       if (d < bestDist) {
         bestDist = d;
-        bestY = p.y;
+        bestY = a.y + (b.y - a.y) * t;
       }
     }
     return bestY;
